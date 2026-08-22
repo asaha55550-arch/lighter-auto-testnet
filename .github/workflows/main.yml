@@ -3,6 +3,10 @@ name: Lighter Testnet Trade
 on:
   workflow_dispatch:
 
+  repository_dispatch:
+    types:
+      - tradingview_alert
+
 jobs:
   trade:
     runs-on: ubuntu-latest
@@ -19,10 +23,24 @@ jobs:
       - name: Install Lighter SDK
         run: npm install lighter-ts-sdk
 
+      - name: Show TradingView Alert
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          echo "Action: ${{ github.event.client_payload.action }}"
+          echo "Symbol: ${{ github.event.client_payload.symbol }}"
+          echo "Quantity: ${{ github.event.client_payload.quantity }}"
+          echo "Price: ${{ github.event.client_payload.price }}"
+
       - name: Execute Testnet Order
         env:
           LIGHTER_NETWORK: testnet
           API_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
           ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
           API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
+
+          TV_ACTION: ${{ github.event.client_payload.action }}
+          TV_SYMBOL: ${{ github.event.client_payload.symbol }}
+          TV_QUANTITY: ${{ github.event.client_payload.quantity }}
+          TV_PRICE: ${{ github.event.client_payload.price }}
+
         run: node trade.mjs
