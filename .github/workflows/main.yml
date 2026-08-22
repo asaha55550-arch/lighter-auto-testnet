@@ -1,6 +1,7 @@
 name: Lighter Testnet Auto Trade
 
 on:
+
   workflow_dispatch:
 
   repository_dispatch:
@@ -8,10 +9,13 @@ on:
       - tradingview_alert
 
 jobs:
+
   trade:
+
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -25,30 +29,50 @@ jobs:
 
       - name: Show TradingView Signal
         run: |
+
           echo "======================================"
           echo "     TRADINGVIEW SIGNAL RECEIVED"
           echo "======================================"
-          echo "Action:       ${{ github.event.client_payload.action }}"
-          echo "Symbol:       ${{ github.event.client_payload.symbol }}"
-          echo "Quantity:     ${{ github.event.client_payload.quantity }}"
-          echo "Price:        ${{ github.event.client_payload.price }}"
-          echo "Reduce Only:  ${{ github.event.client_payload.reduce_only }}"
-          echo "Alert Name:   ${{ github.event.client_payload.alert_name }}"
+
+          echo "Action:      ${{ github.event.client_payload.action }}"
+          echo "Symbol:      ${{ github.event.client_payload.symbol }}"
+          echo "USDT Amount: ${{ github.event.client_payload.usdt_amount }}"
+          echo "Price:       ${{ github.event.client_payload.price }}"
+          echo "Reduce Only: ${{ github.event.client_payload.reduce_only }}"
+          echo "Alert:       ${{ github.event.client_payload.alert_name }}"
+
           echo "======================================"
 
       - name: Execute Lighter Testnet Order
+
         if: github.event_name == 'repository_dispatch'
+
         env:
+
           LIGHTER_NETWORK: testnet
 
-          API_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
-          ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
-          API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
+          API_PRIVATE_KEY:
+            ${{ secrets.LIGHTER_PRIVATE_KEY }}
 
-          TV_ACTION: ${{ github.event.client_payload.action }}
-          TV_SYMBOL: ${{ github.event.client_payload.symbol }}
-          TV_QUANTITY: ${{ github.event.client_payload.quantity }}
-          TV_PRICE: ${{ github.event.client_payload.price }}
-          TV_REDUCE_ONLY: ${{ github.event.client_payload.reduce_only }}
+          ACCOUNT_INDEX:
+            ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
+
+          API_KEY_INDEX:
+            ${{ secrets.LIGHTER_API_KEY_INDEX }}
+
+          TV_ACTION:
+            ${{ github.event.client_payload.action }}
+
+          TV_SYMBOL:
+            ${{ github.event.client_payload.symbol }}
+
+          TV_USDT_AMOUNT:
+            ${{ github.event.client_payload.usdt_amount }}
+
+          TV_PRICE:
+            ${{ github.event.client_payload.price }}
+
+          TV_REDUCE_ONLY:
+            ${{ github.event.client_payload.reduce_only }}
 
         run: node trade.mjs
