@@ -1,669 +1,127 @@
-import {
-  SignerClient,
-  ApiClient,
-  AccountApi,
-  resolveNetworkFromEnv
-} from "lighter-ts-sdk";
-
-// =====================================
-// ENV
-// =====================================
-
-const privateKey = process.env.API_PRIVATE_KEY;
-const accountIndex = Number(process.env.ACCOUNT_INDEX);
-const apiKeyIndex = Number(process.env.API_KEY_INDEX);
-
-const action = String(
-  process.env.TV_ACTION || ""
-).toUpperCase();
-
-const symbol = String(
-  process.env.TV_SYMBOL || ""
-).toUpperCase();
-
-const usdtAmount = Number(
-  process.env.TV_USDT_AMOUNT || 0
-);
-
-const tvPrice = Number(
-  process.env.TV_PRICE || 0
-);
-
-// =====================================
-// CONFIG
-// =====================================
-
-const MARKET_MAP = {
-  ETHUSDT: 0,
-  ETHUSD: 0,
-  ETH: 0
-};
-
-const MIN_USDT = 1;
-const MAX_USDT = 100;
-
-const BASE_SCALE = 1_000_000;
-const PRICE_SCALE = 100;
-
-const MAX_SLIPPAGE = 0.005;
-
-// Wait after closing opposite position
-const CLOSE_WAIT_MS = 1500;
-
-// =====================================
-// VALIDATION
-// =====================================
-
-if (!privateKey) {
-  throw new Error("API_PRIVATE_KEY is missing");
-}
-
-if (!Number.isInteger(accountIndex)) {
-  throw new Error("ACCOUNT_INDEX is invalid");
-}
-
-if (!Number.isInteger(apiKeyIndex)) {
-  throw new Error("API_KEY_INDEX is invalid");
-}
-
-if (!["BUY", "SELL"].includes(action)) {
-  throw new Error(`Invalid action: ${action}`);
-}
-
-if (!(symbol in MARKET_MAP)) {
-  throw new Error(`Unsupported symbol: ${symbol}`);
-}
-
-if (!Number.isFinite(usdtAmount) || usdtAmount < MIN_USDT) {
-  throw new Error(
-    `USDT amount ${usdtAmount} is below minimum ${MIN_USDT}`
-  );
-}
-
-if (usdtAmount > MAX_USDT) {
-  throw new Error(
-    `USDT amount ${usdtAmount} exceeds maximum ${MAX_USDT}`
-  );
-}
-
-if (!Number.isFinite(tvPrice) || tvPrice <= 0) {
-  throw new Error(
-    `Invalid TradingView price: ${tvPrice}`
-  );
-}
-
-const marketIndex = MARKET_MAP[symbol];
-
-// =====================================
-// HELPERS
-// =====================================
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// =====================================
-// GET CURRENT POSITION
-// =====================================
-
-async function getCurrentPosition(accountApi) {
-
-  const account = await accountApi.getAccount({
-    by: "index",
-    value: String(accountIndex)
-  });
-
-  const positions = account.positions || [];
-
-  // Support both SDK/API position formats
-  const position = positions.find(p => {
-
-    const id = Number(
-      p.market_id ??
-      p.marketIndex ??
-      -1
-    );
-
-    return id === marketIndex;
-  });
-
-  if (!position) {
-    return {
-      side: null,
-      size: 0
-    };
-  }
-
-  // Current API format:
-  // sign: 1 = long
-  // sign: -1 = short
-  if (position.sign !== undefined) {
-
-    const size = Math.abs(
-      Number(position.position || 0)
-    );
-
-    if (Number(position.sign) > 0) {
-      return {
-        side: "LONG",
-        size
-      };
-    }
-
-    if (Number(position.sign) < 0) {
-      return {
-        side: "SHORT",
-        size
-      };
-    }
-  }
-
-  // Older SDK format
-  if (position.side) {
-
-    const size = Math.abs(
-      Number(position.size || 0)
-    );
-
-    return {
-      side:
-        String(position.side).toUpperCase(),
-      size
-    };
-  }
-
-  return {
-    side: null,
-    size: 0
-  };
-}
-
-// =====================================
-// EXECUTION PRICE
-// =====================================
-
-function getExecutionPrice(side) {
-
-  if (side === "BUY") {
-
-    return Math.round(
-      tvPrice *
-      (1 + MAX_SLIPPAGE) *
-      PRICE_SCALE
-    );
-
-  }
-
-  return Math.round(
-    tvPrice *
-    (1 - MAX_SLIPPAGE) *
-    PRICE_SCALE
-  );
-}
-
-// =====================================
-// SEND ORDER
-// =====================================
-
-async function sendOrder(
-  client,
-  side,
-  baseAmount,
-  reduceOnly
-) {
-
-  const isAsk = side === "SELL";
-
-  const executionPrice =
-    getExecutionPrice(side);
-
-  const clientOrderIndex =
-    Date.now() +
-    Math.floor(Math.random() * 1000);
-
-  console.log("");
-  console.log("======================================");
-  console.log(
-    reduceOnly
-      ? "CLOSING POSITION"
-      : "OPENING POSITION"
-  );
-  console.log("======================================");
-
-  console.log("Side:", side);
-  console.log("Base Amount:", baseAmount);
-  console.log(
-    "ETH Amount:",
-    baseAmount / BASE_SCALE
-  );
-
-  console.log(
-    "Execution Price:",
-    executionPrice / PRICE_SCALE
-  );
-
-  console.log(
-    "Reduce Only:",
-    reduceOnly
-  );
-
-  const [
-    tx,
-    hash,
-    error
-  ] = await client.createMarketOrder({
-
-    marketIndex,
-
-    clientOrderIndex,
-
-    baseAmount,
-
-    avgExecutionPrice:
-      executionPrice,
-
-    isAsk,
-
-    reduceOnly
-
-  });
-
-  if (error) {
-
-    console.error("");
-    console.error("ORDER FAILED");
-    console.error(error);
-
-    throw new Error(
-      String(error)
-    );
-  }
-
-  if (!hash) {
-
-    throw new Error(
-      "Order submitted without transaction hash"
-    );
-  }
-
-  console.log("");
-  console.log(
-    reduceOnly
-      ? "POSITION CLOSE SUBMITTED"
-      : "NEW POSITION SUBMITTED"
-  );
-
-  console.log("Transaction Hash:", hash);
-
-  try {
-
-    const status =
-      await client.waitForTransaction(
-        hash,
-        30000
-      );
-
-    console.log(
-      "Transaction Status:",
-      status
-    );
-
-  } catch (e) {
-
-    console.log(
-      "Confirmation check failed:",
-      e
-    );
-
-    throw e;
-  }
-
-  return hash;
-}
-
-// =====================================
-// MAIN
-// =====================================
-
-const client = new SignerClient({
-
-  network:
-    resolveNetworkFromEnv(),
-
-  privateKey,
-
-  accountIndex,
-
-  apiKeyIndex
-
-});
-
-// Testnet API
-const apiClient = new ApiClient({
-  host:
-    "https://testnet.zklighter.elliot.ai"
-});
-
-const accountApi =
-  new AccountApi(apiClient);
-
-try {
-
-  console.log("");
-  console.log("======================================");
-  console.log("   LIGHTER TESTNET REVERSE AUTO TRADE");
-  console.log("======================================");
-
-  console.log("Action:", action);
-  console.log("Symbol:", symbol);
-  console.log("USDT:", usdtAmount);
-  console.log("TradingView Price:", tvPrice);
-
-  // ===================================
-  // CONNECT
-  // ===================================
-
-  console.log("");
-  console.log(
-    "Connecting to Lighter Testnet..."
-  );
-
-  await client.initialize();
-  await client.ensureWasmClient();
-
-  console.log(
-    "Connected successfully."
-  );
-
-  // ===================================
-  // CURRENT POSITION
-  // ===================================
-
-  let position =
-    await getCurrentPosition(
-      accountApi
-    );
-
-  console.log("");
-  console.log("CURRENT POSITION");
-  console.log(
-    "Side:",
-    position.side || "NONE"
-  );
-  console.log(
-    "Size:",
-    position.size
-  );
-
-  // ===================================
-  // BUY SIGNAL
-  // ===================================
-
-  if (action === "BUY") {
-
-    console.log("");
-    console.log("BUY SIGNAL RECEIVED");
-
-    // If SHORT exists:
-    // close SHORT first
-
-    if (
-      position.side === "SHORT" &&
-      position.size > 0
-    ) {
-
-      const closeBaseAmount =
-        Math.round(
-          position.size *
-          BASE_SCALE
-        );
-
-      console.log("");
-      console.log(
-        "Existing SHORT detected."
-      );
-
-      console.log(
-        "Closing SHORT:",
-        position.size,
-        "ETH"
-      );
-
-      await sendOrder(
-        client,
-        "BUY",
-        closeBaseAmount,
-        true
-      );
-
-      // Give Lighter time to update position
-      await sleep(
-        CLOSE_WAIT_MS
-      );
-
-      // Verify position is closed
-      position =
-        await getCurrentPosition(
-          accountApi
-        );
-
-      if (
-        position.side === "SHORT" &&
-        position.size > 0.000001
-      ) {
-
-        throw new Error(
-          `SHORT still open after close attempt: ${position.size} ETH`
-        );
-      }
-
-      console.log(
-        "SHORT successfully closed."
-      );
-    }
-
-    // =================================
-    // OPEN NEW LONG
-    // =================================
-
-    const ethQuantity =
-      usdtAmount / tvPrice;
-
-    const baseAmount =
-      Math.round(
-        ethQuantity *
-        BASE_SCALE
-      );
-
-    if (baseAmount <= 0) {
-
-      throw new Error(
-        "Calculated LONG amount is zero"
-      );
-    }
-
-    console.log("");
-    console.log(
-      "Opening NEW LONG"
-    );
-
-    console.log(
-      "USDT:",
-      usdtAmount
-    );
-
-    console.log(
-      "ETH:",
-      ethQuantity
-    );
-
-    await sendOrder(
-      client,
-      "BUY",
-      baseAmount,
-      false
-    );
-  }
-
-  // ===================================
-  // SELL SIGNAL
-  // ===================================
-
-  if (action === "SELL") {
-
-    console.log("");
-    console.log("SELL SIGNAL RECEIVED");
-
-    // If LONG exists:
-    // close LONG first
-
-    if (
-      position.side === "LONG" &&
-      position.size > 0
-    ) {
-
-      const closeBaseAmount =
-        Math.round(
-          position.size *
-          BASE_SCALE
-        );
-
-      console.log("");
-      console.log(
-        "Existing LONG detected."
-      );
-
-      console.log(
-        "Closing LONG:",
-        position.size,
-        "ETH"
-      );
-
-      await sendOrder(
-        client,
-        "SELL",
-        closeBaseAmount,
-        true
-      );
-
-      // Give Lighter time to update
-      await sleep(
-        CLOSE_WAIT_MS
-      );
-
-      // Verify position is closed
-      position =
-        await getCurrentPosition(
-          accountApi
-        );
-
-      if (
-        position.side === "LONG" &&
-        position.size > 0.000001
-      ) {
-
-        throw new Error(
-          `LONG still open after close attempt: ${position.size} ETH`
-        );
-      }
-
-      console.log(
-        "LONG successfully closed."
-      );
-    }
-
-    // =================================
-    // OPEN NEW SHORT
-    // =================================
-
-    const ethQuantity =
-      usdtAmount / tvPrice;
-
-    const baseAmount =
-      Math.round(
-        ethQuantity *
-        BASE_SCALE
-      );
-
-    if (baseAmount <= 0) {
-
-      throw new Error(
-        "Calculated SHORT amount is zero"
-      );
-    }
-
-    console.log("");
-    console.log(
-      "Opening NEW SHORT"
-    );
-
-    console.log(
-      "USDT:",
-      usdtAmount
-    );
-
-    console.log(
-      "ETH:",
-      ethQuantity
-    );
-
-    await sendOrder(
-      client,
-      "SELL",
-      baseAmount,
-      false
-    );
-  }
-
-  // ===================================
-  // FINAL POSITION CHECK
-  // ===================================
-
-  await sleep(
-    CLOSE_WAIT_MS
-  );
-
-  const finalPosition =
-    await getCurrentPosition(
-      accountApi
-    );
-
-  console.log("");
-  console.log("======================================");
-  console.log("          FINAL POSITION");
-  console.log("======================================");
-
-  console.log(
-    "Side:",
-    finalPosition.side || "NONE"
-  );
-
-  console.log(
-    "Size:",
-    finalPosition.size
-  );
-
-  console.log("");
-  console.log(
-    "AUTO TRADE FINISHED SUCCESSFULLY"
-  );
-
-} catch (error) {
-
-  console.error("");
-  console.error("======================================");
-  console.error("          AUTO TRADE FAILED");
-  console.error("======================================");
-
-  console.error(error);
-
-  process.exitCode = 1;
-
-} finally {
-
-  await client.close();
-
-  if (apiClient.close) {
-    apiClient.close();
-  }
-}
+name: Lighter Testnet Auto Trade
+
+on:
+  workflow_dispatch:
+
+  repository_dispatch:
+    types:
+      - tradingview_alert
+
+jobs:
+  trade:
+    name: Execute Lighter Trade
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ==========================================
+      # 1. CHECKOUT
+      # ==========================================
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # 2. SETUP NODE
+      # ==========================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # ==========================================
+      # 3. INSTALL DEPENDENCIES
+      # ==========================================
+      - name: Install Dependencies
+        run: npm install
+
+      # ==========================================
+      # 4. SHOW SIGNAL
+      # ==========================================
+      - name: Show TradingView Signal
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          echo "=========================================="
+          echo "       TRADINGVIEW SIGNAL RECEIVED"
+          echo "=========================================="
+
+          echo "Action:      ${{ github.event.client_payload.action }}"
+          echo "Symbol:      ${{ github.event.client_payload.symbol }}"
+          echo "USDT Unit:   ${{ github.event.client_payload.usdt_amount }}"
+          echo "Price:       ${{ github.event.client_payload.price }}"
+          echo "Reduce Only: ${{ github.event.client_payload.reduce_only }}"
+          echo "Alert Name:  ${{ github.event.client_payload.alert_name }}"
+
+          echo "=========================================="
+
+      # ==========================================
+      # 5. VALIDATE SIGNAL
+      # ==========================================
+      - name: Validate TradingView Signal
+        if: github.event_name == 'repository_dispatch'
+        env:
+          TV_ACTION: ${{ github.event.client_payload.action }}
+          TV_SYMBOL: ${{ github.event.client_payload.symbol }}
+          TV_USDT_AMOUNT: ${{ github.event.client_payload.usdt_amount }}
+          TV_PRICE: ${{ github.event.client_payload.price }}
+        run: |
+          echo "Checking signal..."
+
+          if [ "$TV_ACTION" != "BUY" ] && [ "$TV_ACTION" != "SELL" ]; then
+            echo "ERROR: Invalid action: $TV_ACTION"
+            exit 1
+          fi
+
+          if [ "$TV_SYMBOL" != "ETHUSDT" ]; then
+            echo "ERROR: Only ETHUSDT is allowed"
+            exit 1
+          fi
+
+          if [ -z "$TV_USDT_AMOUNT" ]; then
+            echo "ERROR: USDT amount missing"
+            exit 1
+          fi
+
+          if [ -z "$TV_PRICE" ]; then
+            echo "ERROR: Price missing"
+            exit 1
+          fi
+
+          echo "Signal validation successful."
+
+      # ==========================================
+      # 6. EXECUTE LIGHTER TESTNET ORDER
+      # ==========================================
+      - name: Execute Lighter Testnet Order
+        if: github.event_name == 'repository_dispatch'
+        env:
+          LIGHTER_NETWORK: testnet
+
+          API_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
+          ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
+          API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
+
+          TV_ACTION: ${{ github.event.client_payload.action }}
+          TV_SYMBOL: ${{ github.event.client_payload.symbol }}
+          TV_USDT_AMOUNT: ${{ github.event.client_payload.usdt_amount }}
+          TV_PRICE: ${{ github.event.client_payload.price }}
+          TV_REDUCE_ONLY: ${{ github.event.client_payload.reduce_only }}
+
+        run: |
+          echo "=========================================="
+          echo "       STARTING LIGHTER TESTNET"
+          echo "=========================================="
+
+          node trade.mjs
+
+      # ==========================================
+      # 7. FINISHED
+      # ==========================================
+      - name: Trade Job Finished
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "          TRADE JOB FINISHED"
+          echo "=========================================="
+          echo "Workflow status: ${{ job.status }}"
+          echo "=========================================="
