@@ -1,4 +1,4 @@
-name: Lighter Testnet Trade
+name: Lighter Testnet Auto Trade
 
 on:
   workflow_dispatch:
@@ -12,15 +12,60 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Show TradingView Signal
-        run: |
-          echo "=== TRADINGVIEW SIGNAL RECEIVED ==="
-          echo "Action: ${{ github.event.client_payload.action }}"
-          echo "Symbol: ${{ github.event.client_payload.symbol }}"
-          echo "Quantity: ${{ github.event.client_payload.quantity }}"
-          echo "Price: ${{ github.event.client_payload.price }}"
-          echo "Alert Name: ${{ github.event.client_payload.alert_name }}"
-          echo "==================================="
 
-      - name: Test Complete
-        run: echo "Webhook -> GitHub connection SUCCESS"
+      # ==========================
+      # CHECKOUT
+      # ==========================
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ==========================
+      # NODE
+      # ==========================
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # ==========================
+      # INSTALL SDK
+      # ==========================
+      - name: Install Lighter SDK
+        run: npm install lighter-ts-sdk
+
+      # ==========================
+      # DISPLAY SIGNAL
+      # ==========================
+      - name: Read TradingView Signal
+        run: |
+          echo "================================="
+          echo "TRADINGVIEW SIGNAL"
+          echo "================================="
+          echo "Action:   ${{ github.event.client_payload.action }}"
+          echo "Symbol:   ${{ github.event.client_payload.symbol }}"
+          echo "Quantity: ${{ github.event.client_payload.quantity }}"
+          echo "Price:    ${{ github.event.client_payload.price }}"
+          echo "Reduce:   ${{ github.event.client_payload.reduce_only }}"
+          echo "Alert:    ${{ github.event.client_payload.alert_name }}"
+          echo "================================="
+
+      # ==========================
+      # EXECUTE LIGHTER ORDER
+      # ==========================
+      - name: Execute Lighter Testnet Order
+        if: github.event_name == 'repository_dispatch'
+        env:
+          LIGHTER_NETWORK: testnet
+
+          API_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
+          ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
+          API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
+
+          TV_ACTION: ${{ github.event.client_payload.action }}
+          TV_SYMBOL: ${{ github.event.client_payload.symbol }}
+          TV_QUANTITY: ${{ github.event.client_payload.quantity }}
+          TV_PRICE: ${{ github.event.client_payload.price }}
+          TV_REDUCE_ONLY: ${{ github.event.client_payload.reduce_only }}
+
+        run: |
+          node trade.mjs
