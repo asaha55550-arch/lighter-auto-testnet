@@ -12,46 +12,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ==========================
-      # CHECKOUT
-      # ==========================
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ==========================
-      # NODE
-      # ==========================
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 22
 
-      # ==========================
-      # INSTALL SDK
-      # ==========================
       - name: Install Lighter SDK
         run: npm install lighter-ts-sdk
 
-      # ==========================
-      # DISPLAY SIGNAL
-      # ==========================
-      - name: Read TradingView Signal
+      - name: Show TradingView Signal
         run: |
-          echo "================================="
-          echo "TRADINGVIEW SIGNAL"
-          echo "================================="
-          echo "Action:   ${{ github.event.client_payload.action }}"
-          echo "Symbol:   ${{ github.event.client_payload.symbol }}"
-          echo "Quantity: ${{ github.event.client_payload.quantity }}"
-          echo "Price:    ${{ github.event.client_payload.price }}"
-          echo "Reduce:   ${{ github.event.client_payload.reduce_only }}"
-          echo "Alert:    ${{ github.event.client_payload.alert_name }}"
-          echo "================================="
+          echo "======================================"
+          echo "     TRADINGVIEW SIGNAL RECEIVED"
+          echo "======================================"
+          echo "Action:       ${{ github.event.client_payload.action }}"
+          echo "Symbol:       ${{ github.event.client_payload.symbol }}"
+          echo "Quantity:     ${{ github.event.client_payload.quantity }}"
+          echo "Price:        ${{ github.event.client_payload.price }}"
+          echo "Reduce Only:  ${{ github.event.client_payload.reduce_only }}"
+          echo "Alert Name:   ${{ github.event.client_payload.alert_name }}"
+          echo "======================================"
 
-      # ==========================
-      # EXECUTE LIGHTER ORDER
-      # ==========================
       - name: Execute Lighter Testnet Order
         if: github.event_name == 'repository_dispatch'
         env:
@@ -67,5 +51,4 @@ jobs:
           TV_PRICE: ${{ github.event.client_payload.price }}
           TV_REDUCE_ONLY: ${{ github.event.client_payload.reduce_only }}
 
-        run: |
-          node trade.mjs
+        run: node trade.mjs
