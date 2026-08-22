@@ -12,35 +12,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-
-      - name: Install Lighter SDK
-        run: npm install lighter-ts-sdk
-
-      - name: Show TradingView Alert
-        if: github.event_name == 'repository_dispatch'
+      - name: Show TradingView Signal
         run: |
+          echo "=== TRADINGVIEW SIGNAL RECEIVED ==="
           echo "Action: ${{ github.event.client_payload.action }}"
           echo "Symbol: ${{ github.event.client_payload.symbol }}"
           echo "Quantity: ${{ github.event.client_payload.quantity }}"
           echo "Price: ${{ github.event.client_payload.price }}"
+          echo "Alert Name: ${{ github.event.client_payload.alert_name }}"
+          echo "==================================="
 
-      - name: Execute Testnet Order
-        env:
-          LIGHTER_NETWORK: testnet
-          API_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
-          ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
-          API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
-
-          TV_ACTION: ${{ github.event.client_payload.action }}
-          TV_SYMBOL: ${{ github.event.client_payload.symbol }}
-          TV_QUANTITY: ${{ github.event.client_payload.quantity }}
-          TV_PRICE: ${{ github.event.client_payload.price }}
-
-        run: node trade.mjs
+      - name: Test Complete
+        run: echo "Webhook -> GitHub connection SUCCESS"
