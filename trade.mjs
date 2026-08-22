@@ -3,12 +3,14 @@ import {
   resolveNetworkFromEnv
 } from "lighter-ts-sdk";
 
-// ===============================
-// ENV
-// ===============================
 const privateKey = process.env.API_PRIVATE_KEY;
 const accountIndex = Number(process.env.ACCOUNT_INDEX);
 const apiKeyIndex = Number(process.env.API_KEY_INDEX);
+
+const action = String(process.env.TV_ACTION || "").toUpperCase();
+const symbol = String(process.env.TV_SYMBOL || "").toUpperCase();
+const tvQuantity = Number(process.env.TV_QUANTITY || 0);
+const tvPrice = Number(process.env.TV_PRICE || 0);
 
 if (!privateKey) {
   throw new Error("API_PRIVATE_KEY is missing");
@@ -22,9 +24,53 @@ if (!Number.isInteger(apiKeyIndex)) {
   throw new Error("API_KEY_INDEX is invalid");
 }
 
-// ===============================
-// LIGHTER CLIENT
-// ===============================
+// Manual run হলে test BUY
+const isManualRun = !action;
+
+const finalAction = isManualRun ? "BUY" : action;
+const finalSymbol = symbol || "ETHUSDT";
+const finalQuantity = isManualRun ? 0.01 : tvQuantity;
+
+if (!["BUY", "SELL"].includes(finalAction)) {
+  throw new Error(`Invalid action: ${finalAction}`);
+}
+
+if (!Number.isFinite(finalQuantity) || finalQuantity <= 0) {
+  throw new Error(`Invalid quantity: ${finalQuantity}`);
+}
+
+// ETH market
+const marketIndex = 0;
+
+// Lighter base amount:
+// 0.01 ETH = 10000
+const baseAmount = Math.round(finalQuantity * 1_000_000);
+
+// Market order price protection.
+// If TradingView sends price, use it.
+// Otherwise use 3000 USD.
+const referencePrice = tvPrice > 0 ? tvPrice : 3000;
+
+// Lighter price scale used by the successful test
+const avgExecutionPrice = Math.round(referencePrice * 100);
+
+// BUY = isAsk false
+// SELL = isAsk true
+const isAsk = finalAction === "SELL";
+
+console.log("================================");
+console.log("LIGHTER TESTNET ORDER");
+console.log("================================");
+console.log("Action:", finalAction);
+console.log("Symbol:", finalSymbol);
+console.log("Quantity:", finalQuantity);
+console.log("Base Amount:", baseAmount);
+console.log("Reference Price:", referencePrice);
+console.log("Ask/Sell:", isAsk);
+console.log("Account:", accountIndex);
+console.log("API Key Index:", apiKeyIndex);
+console.log("================================");
+
 const client = new SignerClient({
   network: resolveNetworkFromEnv(),
   privateKey,
@@ -32,126 +78,71 @@ const client = new SignerClient({
   apiKeyIndex
 });
 
-// ===============================
-// MAIN
-// ===============================
 async function main() {
-  console.log("================================");
-  console.log("Lighter Testnet Trade");
-  console.log("================================");
-
-  console.log("Account:", accountIndex);
-  console.log("API Key Index:", apiKeyIndex);
 
   await client.initialize();
   await client.ensureWasmClient();
 
   console.log("Connected to Lighter Testnet");
 
-  // ==========================================
-  // TEST ORDER
-  // BUY 0.01 ETH
-  // ==========================================
-  console.log("Sending BUY 0.01 ETH...");
-
   const [tx, hash, error] = await client.createMarketOrder({
-    marketIndex: 0,
-
+    marketIndex,
     clientOrderIndex: Date.now(),
 
-    // 0.01 ETH
-    baseAmount: 10000,
+    baseAmount,
 
-    // ETH price estimate: 3000 USDT
-    // Lighter price format
-    avgExecutionPrice: 300000,
+    avgExecutionPrice,
 
-    // false = BUY
-    isAsk: false,
+    isAsk,
 
-    // false = normal opening order
     reduceOnly: false
   });
 
-  // ==========================================
-  // ORDER ERROR
-  // ==========================================
   if (error) {
-    console.error("================================");
-    console.error("ORDER FAILED");
-    console.error("================================");
-    console.error(error);
-
+    console.error("ORDER FAILED:", error);
     await client.close();
     process.exit(1);
   }
 
-  // ==========================================
-  // ORDER SUBMITTED
-  // ==========================================
   console.log("================================");
-  console.log("ORDER SUBMITTED");
+  console.log("ORDER SUBMITTED SUCCESSFULLY");
   console.log("================================");
 
   console.log("Transaction:", tx);
   console.log("Transaction Hash:", hash);
 
-  // ==========================================
-  // WAIT FOR TRANSACTION
-  // ==========================================
   if (hash) {
-    console.log("Waiting for transaction confirmation...");
-
     try {
       const status = await client.waitForTransaction(
         hash,
-        60000
+        30000
       );
 
-      console.log("================================");
-      console.log("TRANSACTION STATUS");
-      console.log("================================");
-
-      console.log(status);
-
-      /*
-        Important:
-        status 2 = COMMITTED
-        status 3 = EXECUTED
-      */
-
-      if (status === 3 || status?.status === 3) {
-        console.log("✅ TRANSACTION EXECUTED");
-      } else if (status === 2 || status?.status === 2) {
-        console.log("⚠️ TRANSACTION COMMITTED");
-        console.log("Order is not confirmed as EXECUTED yet.");
-      } else {
-        console.log("ℹ️ Transaction status:", status);
-      }
+      console.log(
+        "TRANSACTION STATUS:",
+        status
+      );
 
     } catch (e) {
-      console.error("Transaction confirmation check failed:");
-      console.error(e);
+
+      console.log(
+        "Order submitted, confirmation check failed:",
+        e
+      );
     }
-  } else {
-    console.log("⚠️ No transaction hash returned.");
   }
 
   await client.close();
 
-  console.log("================================");
-  console.log("DONE");
-  console.log("================================");
+  console.log("Done");
 }
 
-// ===============================
-// FATAL ERROR
-// ===============================
 main().catch(async (error) => {
-  console.error("================================");
-  console.error("FATAL ERROR");
-  console.error("================================");
-  console.error(error);
+
+  console.error(
+    "FATAL ERROR:",
+    error
+  );
 
   try {
     await client.close();
