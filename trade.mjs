@@ -3,319 +3,262 @@ import {
   resolveNetworkFromEnv
 } from "lighter-ts-sdk";
 
-// =====================================
+// ============================================
 // ENV
-// =====================================
+// ============================================
 
-const privateKey =
-  process.env.API_PRIVATE_KEY;
+const privateKey = process.env.API_PRIVATE_KEY;
+const accountIndex = Number(process.env.ACCOUNT_INDEX);
+const apiKeyIndex = Number(process.env.API_KEY_INDEX);
 
-const accountIndex =
-  Number(process.env.ACCOUNT_INDEX);
+const action = String(
+  process.env.TV_ACTION || ""
+).trim().toUpperCase();
 
-const apiKeyIndex =
-  Number(process.env.API_KEY_INDEX);
+const symbol = String(
+  process.env.TV_SYMBOL || ""
+).trim().toUpperCase();
 
-const action =
-  String(
-    process.env.TV_ACTION || ""
-  ).toUpperCase();
+const tvUnit = Number(
+  process.env.TV_USDT_AMOUNT || 0
+);
 
-const symbol =
-  String(
-    process.env.TV_SYMBOL || ""
-  ).toUpperCase();
+const tvPrice = Number(
+  process.env.TV_PRICE || 0
+);
+
+
+// ============================================
+// USER SIZE CONVENTION
+// ============================================
+
+// TradingView:
+// 1 = $100
+// 2 = $200
+// 0.5 = $50
+
+const USDT_MULTIPLIER = 100;
 
 const usdtAmount =
-  Number(
-    process.env.TV_USDT_AMOUNT || 0
-  );
+  tvUnit * USDT_MULTIPLIER;
 
-const tvPrice =
-  Number(
-    process.env.TV_PRICE || 0
-  );
 
-const reduceOnly =
-  String(
-    process.env.TV_REDUCE_ONLY ||
-    "false"
-  ).toLowerCase() === "true";
-
-// =====================================
-// CONFIG
-// =====================================
-
-const MARKET_MAP = {
-
-  ETHUSDT: 0,
-  ETHUSD: 0,
-  ETH: 0
-
-};
-
-// SAFETY LIMIT
+// ============================================
+// SAFETY
+// ============================================
 
 const MIN_USDT = 1;
 
-const MAX_USDT = 100;
+const MAX_USDT = 200;
 
-// ETH base scale
+
+// ============================================
+// MARKET
+// ============================================
+
+const MARKET_MAP = {
+  ETHUSDT: 0,
+  ETHUSD: 0,
+  ETH: 0
+};
+
+
+// ============================================
+// SCALING
+// ============================================
 
 const BASE_SCALE = 1_000_000;
 
-// Lighter price scale
-
 const PRICE_SCALE = 100;
 
-// Maximum slippage
+
+// ============================================
+// SLIPPAGE
+// ============================================
 
 const MAX_SLIPPAGE = 0.005;
 
-// =====================================
+
+// ============================================
 // VALIDATION
-// =====================================
+// ============================================
 
 if (!privateKey) {
-
   throw new Error(
     "API_PRIVATE_KEY is missing"
   );
-
 }
 
 if (!Number.isInteger(accountIndex)) {
-
   throw new Error(
     "ACCOUNT_INDEX is invalid"
   );
-
 }
 
 if (!Number.isInteger(apiKeyIndex)) {
-
   throw new Error(
     "API_KEY_INDEX is invalid"
   );
-
 }
 
-if (
-  !["BUY", "SELL"].includes(action)
-) {
-
+if (!["BUY", "SELL"].includes(action)) {
   throw new Error(
     `Invalid action: ${action}`
   );
-
 }
 
 if (!(symbol in MARKET_MAP)) {
-
   throw new Error(
     `Unsupported symbol: ${symbol}`
   );
+}
 
+if (
+  !Number.isFinite(tvUnit) ||
+  tvUnit <= 0
+) {
+  throw new Error(
+    `Invalid TradingView amount: ${tvUnit}`
+  );
 }
 
 if (
   !Number.isFinite(usdtAmount) ||
   usdtAmount < MIN_USDT
 ) {
-
   throw new Error(
-    `USDT amount ${usdtAmount} is below minimum ${MIN_USDT}`
+    `Invalid USDT amount: ${usdtAmount}`
   );
-
 }
 
 if (usdtAmount > MAX_USDT) {
-
   throw new Error(
     `USDT amount ${usdtAmount} exceeds maximum ${MAX_USDT}`
   );
-
 }
 
 if (
   !Number.isFinite(tvPrice) ||
   tvPrice <= 0
 ) {
-
   throw new Error(
     `Invalid TradingView price: ${tvPrice}`
   );
-
 }
 
-// =====================================
-// MARKET
-// =====================================
+
+// ============================================
+// MARKET INDEX
+// ============================================
 
 const marketIndex =
   MARKET_MAP[symbol];
 
-// =====================================
-// USDT → ETH
-// =====================================
 
-const ethQuantity =
+// ============================================
+// TARGET SIZE
+// ============================================
+
+const targetEth =
   usdtAmount / tvPrice;
 
-const baseAmount =
+const targetBaseAmount =
   Math.round(
-    ethQuantity * BASE_SCALE
+    targetEth * BASE_SCALE
   );
 
-if (baseAmount <= 0) {
-
+if (targetBaseAmount <= 0) {
   throw new Error(
-    "Calculated base amount is zero"
+    "Calculated target amount is zero"
   );
-
 }
 
-// =====================================
+
+// ============================================
 // EXECUTION PRICE
-// =====================================
+// ============================================
 
-const executionPrice =
-  action === "BUY"
+function executionPrice(side) {
 
-    ? Math.round(
-        tvPrice *
-        (1 + MAX_SLIPPAGE) *
-        PRICE_SCALE
-      )
+  if (side === "BUY") {
 
-    : Math.round(
-        tvPrice *
-        (1 - MAX_SLIPPAGE) *
-        PRICE_SCALE
-      );
+    return Math.round(
+      tvPrice *
+      (1 + MAX_SLIPPAGE) *
+      PRICE_SCALE
+    );
 
-const isAsk =
-  action === "SELL";
+  }
 
-// =====================================
-// ORDER ID
-// =====================================
-
-const clientOrderIndex =
-  Date.now() +
-  Math.floor(
-    Math.random() * 1000
+  return Math.round(
+    tvPrice *
+    (1 - MAX_SLIPPAGE) *
+    PRICE_SCALE
   );
+}
 
-// =====================================
-// LOG
-// =====================================
 
-console.log(
-  "======================================"
-);
+// ============================================
+// ORDER
+// ============================================
 
-console.log(
-  "       LIGHTER TESTNET AUTO TRADE"
-);
-
-console.log(
-  "======================================"
-);
-
-console.log(
-  "Action:",
-  action
-);
-
-console.log(
-  "Symbol:",
-  symbol
-);
-
-console.log(
-  "USDT Amount:",
-  usdtAmount
-);
-
-console.log(
-  "TradingView Price:",
-  tvPrice
-);
-
-console.log(
-  "Calculated ETH:",
-  ethQuantity
-);
-
-console.log(
-  "Base Amount:",
-  baseAmount
-);
-
-console.log(
-  "Execution Price:",
-  executionPrice
-);
-
-console.log(
-  "Execution Price USD:",
-  executionPrice /
-  PRICE_SCALE
-);
-
-console.log(
-  "Side:",
-  isAsk ? "SELL" : "BUY"
-);
-
-console.log(
-  "Reduce Only:",
+async function submitOrder(
+  client,
+  side,
+  baseAmount,
   reduceOnly
-);
+) {
 
-console.log(
-  "======================================"
-);
+  const isAsk =
+    side === "SELL";
 
-// =====================================
-// CONNECT
-// =====================================
+  const clientOrderIndex =
+    Date.now() +
+    Math.floor(
+      Math.random() * 10000
+    );
 
-const client =
-  new SignerClient({
+  const price =
+    executionPrice(side);
 
-    network:
-      resolveNetworkFromEnv(),
-
-    privateKey,
-
-    accountIndex,
-
-    apiKeyIndex
-
-  });
-
-try {
-
+  console.log("");
   console.log(
-    "Connecting to Lighter Testnet..."
+    "======================================"
   );
 
-  await client.initialize();
-
-  await client.ensureWasmClient();
-
   console.log(
-    "Connected successfully."
+    reduceOnly
+      ? "CLOSE ORDER"
+      : "OPEN ORDER"
   );
 
-  // ===================================
-  // ORDER
-  // ===================================
+  console.log(
+    "======================================"
+  );
 
   console.log(
-    "Submitting order..."
+    "Side:",
+    side
+  );
+
+  console.log(
+    "Base Amount:",
+    baseAmount
+  );
+
+  console.log(
+    "ETH:",
+    baseAmount / BASE_SCALE
+  );
+
+  console.log(
+    "Execution Price:",
+    price / PRICE_SCALE
+  );
+
+  console.log(
+    "Reduce Only:",
+    reduceOnly
   );
 
   const [
@@ -332,94 +275,33 @@ try {
       baseAmount,
 
       avgExecutionPrice:
-        executionPrice,
+        price,
 
       isAsk,
 
       reduceOnly
-
     });
-
-  // ===================================
-  // ERROR
-  // ===================================
 
   if (error) {
 
     console.error(
-      "======================================"
+      "ORDER FAILED:",
+      error
     );
-
-    console.error(
-      "          ORDER FAILED"
-    );
-
-    console.error(
-      "======================================"
-    );
-
-    console.error(error);
 
     throw new Error(
       String(error)
     );
-
   }
 
-  // ===================================
-  // SUCCESS
-  // ===================================
-
   console.log(
-    "======================================"
-  );
-
-  console.log(
-    "   ORDER SUBMITTED SUCCESSFULLY"
-  );
-
-  console.log(
-    "======================================"
-  );
-
-  console.log(
-    "Action:",
-    action
-  );
-
-  console.log(
-    "Symbol:",
-    symbol
-  );
-
-  console.log(
-    "USDT:",
-    usdtAmount
-  );
-
-  console.log(
-    "ETH:",
-    ethQuantity
-  );
-
-  console.log(
-    "Base Amount:",
-    baseAmount
-  );
-
-  console.log(
-    "Reduce Only:",
-    reduceOnly
+    "ORDER SUBMITTED"
   );
 
   console.log(
     "Transaction Hash:",
     hash
   );
-
-  // ===================================
-  // CONFIRM
-  // ===================================
 
   if (hash) {
 
@@ -439,13 +321,194 @@ try {
     } catch (e) {
 
       console.log(
-        "Order submitted, confirmation check failed:",
+        "Confirmation check failed:",
         e
       );
 
     }
 
   }
+
+  return hash;
+}
+
+
+// ============================================
+// CONNECT
+// ============================================
+
+const client =
+  new SignerClient({
+
+    network:
+      resolveNetworkFromEnv(),
+
+    privateKey,
+
+    accountIndex,
+
+    apiKeyIndex
+
+  });
+
+
+try {
+
+  console.log("");
+  console.log(
+    "======================================"
+  );
+
+  console.log(
+    " LIGHTER TESTNET REVERSE AUTO TRADE"
+  );
+
+  console.log(
+    "======================================"
+  );
+
+  console.log(
+    "Action:",
+    action
+  );
+
+  console.log(
+    "Symbol:",
+    symbol
+  );
+
+  console.log(
+    "TradingView Unit:",
+    tvUnit
+  );
+
+  console.log(
+    "USDT Notional:",
+    usdtAmount
+  );
+
+  console.log(
+    "TradingView Price:",
+    tvPrice
+  );
+
+  console.log(
+    "Target ETH:",
+    targetEth
+  );
+
+  console.log(
+    "Target Base Amount:",
+    targetBaseAmount
+  );
+
+
+  // ==========================================
+  // CONNECT
+  // ==========================================
+
+  console.log(
+    "Connecting to Lighter Testnet..."
+  );
+
+  await client.initialize();
+
+  await client.ensureWasmClient();
+
+  console.log(
+    "Connected successfully."
+  );
+
+
+  // ==========================================
+  // IMPORTANT
+  // ==========================================
+  //
+  // We do NOT blindly close positions.
+  //
+  // The bot only sends the requested
+  // direction here.
+  //
+  // Position verification must be done
+  // with the exact SDK/API version before
+  // enabling automatic reversal.
+  //
+  // ==========================================
+
+
+  if (action === "BUY") {
+
+    console.log("");
+    console.log(
+      "BUY SIGNAL"
+    );
+
+    console.log(
+      "Opening LONG..."
+    );
+
+    await submitOrder(
+      client,
+      "BUY",
+      targetBaseAmount,
+      false
+    );
+
+  }
+
+
+  if (action === "SELL") {
+
+    console.log("");
+    console.log(
+      "SELL SIGNAL"
+    );
+
+    console.log(
+      "Opening SHORT..."
+    );
+
+    await submitOrder(
+      client,
+      "SELL",
+      targetBaseAmount,
+      false
+    );
+
+  }
+
+
+  console.log("");
+  console.log(
+    "======================================"
+  );
+
+  console.log(
+    "TRADE FINISHED"
+  );
+
+  console.log(
+    "======================================");
+
+
+} catch (error) {
+
+  console.error("");
+  console.error(
+    "======================================"
+  );
+
+  console.error(
+    "AUTO TRADE FAILED"
+  );
+
+  console.error(
+    "======================================"
+  );
+
+  console.error(error);
+
+  process.exitCode = 1;
 
 } finally {
 
