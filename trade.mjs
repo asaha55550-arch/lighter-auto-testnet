@@ -3,20 +3,20 @@ import {
   resolveNetworkFromEnv
 } from "lighter-ts-sdk";
 
-const privateKey = process.env.API_PRIVATE_KEY;
-const accountIndex = Number(process.env.ACCOUNT_INDEX);
-const apiKeyIndex = Number(process.env.API_KEY_INDEX);
+const privateKey = process.env.LIGHTER_PRIVATE_KEY;
+const accountIndex = Number(process.env.LIGHTER_ACCOUNT_INDEX);
+const apiKeyIndex = Number(process.env.LIGHTER_API_KEY_INDEX);
 
 if (!privateKey) {
-  throw new Error("API_PRIVATE_KEY is missing");
+  throw new Error("LIGHTER_PRIVATE_KEY is missing");
 }
 
 if (!Number.isInteger(accountIndex)) {
-  throw new Error("ACCOUNT_INDEX is invalid");
+  throw new Error("LIGHTER_ACCOUNT_INDEX is invalid");
 }
 
 if (!Number.isInteger(apiKeyIndex)) {
-  throw new Error("API_KEY_INDEX is invalid");
+  throw new Error("LIGHTER_API_KEY_INDEX is invalid");
 }
 
 const client = new SignerClient({
@@ -61,7 +61,10 @@ async function main() {
       const status = await client.waitForTransaction(hash, 30000);
       console.log("TRANSACTION STATUS:", status);
     } catch (e) {
-      console.log("Transaction submitted, but confirmation check failed:", e);
+      console.log(
+        "Transaction submitted, but confirmation check failed:",
+        e
+      );
     }
   }
 
