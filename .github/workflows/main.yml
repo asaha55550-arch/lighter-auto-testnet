@@ -12,16 +12,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install Lighter SDK
         run: npm install lighter-ts-sdk
 
       - name: Execute Testnet Order
         env:
-          LIGHTER_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
-          LIGHTER_ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
-          LIGHTER_API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
+          LIGHTER_NETWORK: testnet
+          API_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
+          ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
+          API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
         run: node trade.mjs
