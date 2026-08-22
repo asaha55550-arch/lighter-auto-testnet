@@ -2,21 +2,6 @@ name: Lighter Testnet Trade
 
 on:
   workflow_dispatch:
-    inputs:
-      action:
-        description: "buy or sell"
-        required: true
-        type: string
-      symbol:
-        description: "Trading symbol"
-        required: true
-        default: "ETHUSDT"
-        type: string
-      quantity:
-        description: "ETH quantity"
-        required: true
-        default: "0.01"
-        type: string
 
 jobs:
   trade:
@@ -36,11 +21,7 @@ jobs:
 
       - name: Execute Testnet Order
         env:
-          LIGHTER_NETWORK: testnet
-          API_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
-          ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
-          API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
-          TRADE_ACTION: ${{ inputs.action }}
-          TRADE_SYMBOL: ${{ inputs.symbol }}
-          TRADE_QUANTITY: ${{ inputs.quantity }}
+          LIGHTER_PRIVATE_KEY: ${{ secrets.LIGHTER_PRIVATE_KEY }}
+          LIGHTER_ACCOUNT_INDEX: ${{ secrets.LIGHTER_ACCOUNT_INDEX }}
+          LIGHTER_API_KEY_INDEX: ${{ secrets.LIGHTER_API_KEY_INDEX }}
         run: node trade.mjs
